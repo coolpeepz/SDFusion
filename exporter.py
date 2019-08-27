@@ -8,6 +8,22 @@ import os, errno
 from collections import defaultdict
 from .helpers import *
 
+
+class FakeOccurences(list):
+    def itemByName(self, name):
+        for occ in self:
+            if occ.name == name:
+                return occ
+        return None
+    
+
+class FakeRigidGroup():
+    def __init__(self, occurrence):
+        self.name = ('E' + occurrence.name)[:-2]
+        self.occurrences = FakeOccurences()
+        self.occurrences.append(occurrence)
+
+
 class SDFExporter():
     ui = None
     app = None
@@ -16,6 +32,7 @@ class SDFExporter():
     exportMgr = None
     rootOcc = None
     rootComp = None
+    allRigidGroups = []
 
     root = None
     model = None
@@ -127,12 +144,9 @@ class SDFExporter():
         progressDialog.hide()
 
     def getAllRigidGroups(self):
-        allRigidGroups = self.rootComp.allRigidGroups
-        self.numberOfRigidGroupsToExport = 0
-        for rig in allRigidGroups:
-            if rig is not None and rig.name[:6] == "EXPORT":
-                self.numberOfRigidGroupsToExport = self.numberOfRigidGroupsToExport+1
-        return allRigidGroups
+        self.allRigidGroups = [g for g in self.rootComp.allRigidGroups]
+        self.allRigidGroups += [FakeRigidGroup(occ) for occ in self.rootOcc if occ.name[:6] == 'XPORT_']
+        return self.allRigidGroups
 
     def getAllBodiesInRigidGroup(self, name, rigidGroup):
         self.numberOfBodies[name] = 0
@@ -193,7 +207,7 @@ class SDFExporter():
             progressDialog.isBackgroundTranslucent = False
             temp_component = self.rootOcc.addNewComponent(transformMatrix)
             temp_component.component.name = "TEMP_" + name
-            group = [g for g in self.rootComp.allRigidGroups if g.name == "EXPORT_"+name][0]
+            group = [g for g in self.allRigidGroups if g.name == "EXPORT_"+name][0]
             progressDialog.show(name, 'Copy Bodies to new component: %v/%m', 0, len(group.occurrences), 1)
             i = 0
             for occurrence in group.occurrences:
@@ -216,7 +230,7 @@ class SDFExporter():
                 self.logfile.write("exporting stl of " + name + "\n")
                 new_component = self.rootOcc.addNewComponent(self.transformMatrices[name])
                 new_component.component.name = "EXPORT_" + name
-                group = [g for g in self.rootComp.allRigidGroups if g.name == "EXPORT_"+name][0]
+                group = [g for g in self.allRigidGroups if g.name == "EXPORT_"+name][0]
                 progressDialog.show(name, 'Exporting STL: %v/%m', 0, len(group.occurrences), 1)
                 i = 0
                 for occurrence in group.occurrences:
@@ -240,7 +254,7 @@ class SDFExporter():
         self.model.append(link)
         self.rootOcc.itemByName("EXPORT_" + name + ":1") .isLightBulbOn = False
         # delete the temporary new occurrence
-        # new_component.deleteMe()
+        new_component.deleteMe()
         # Call doEvents to give Fusion a chance to react.
         adsk.doEvents()
         return True
@@ -251,7 +265,7 @@ class SDFExporter():
 
         #get all joints of the design
         allComponents = self.design.allComponents
-        allRigidGroups = self.rootComp.allRigidGroups
+        allRigidGroups = self.allRigidGroups
         for com in allComponents:
             if com is not None:
                 allJoints = com.joints
